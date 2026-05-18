@@ -15,6 +15,8 @@ This project does **not** try to feed a password into OpenSSH `sftp`. Instead, i
 
 ## Build
 
+This project targets Java 8 / 1.8.
+
 ```bash
 ./gradlew clean test fatJar
 ```
@@ -31,6 +33,13 @@ Or use Gradle's application distribution:
 ./gradlew installDist
 ./build/install/sftp-pass/bin/sftp-pass --help
 ```
+
+## Tagged builds
+
+Pushing any Git tag runs the `Build fat JAR on tag` GitHub Actions workflow.
+The workflow executes `./gradlew clean test fatJar` with Java 8 and uploads
+`build/libs/*-all.jar` as a workflow artifact named with the tag. Tag
+characters that are not safe in artifact names are replaced with `-`.
 
 ## Examples
 

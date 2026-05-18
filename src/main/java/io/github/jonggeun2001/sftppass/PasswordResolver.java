@@ -1,5 +1,6 @@
 package io.github.jonggeun2001.sftppass;
 
+import java.io.ByteArrayOutputStream;
 import java.io.Console;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -30,7 +31,7 @@ final class PasswordResolver {
             return readFromStdin();
         }
         if (options.passwordFile != null) {
-            return trimLine(Files.readString(options.passwordFile, StandardCharsets.UTF_8)).toCharArray();
+            return trimLine(new String(Files.readAllBytes(options.passwordFile), StandardCharsets.UTF_8)).toCharArray();
         }
 
         String envName = options.passwordEnvName();
@@ -57,12 +58,22 @@ final class PasswordResolver {
     }
 
     private static char[] readFromStdin() throws IOException {
-        byte[] data = System.in.readAllBytes();
+        byte[] data = readAllStdinBytes();
         String value = trimLine(new String(data, StandardCharsets.UTF_8));
         if (value.isEmpty()) {
             throw new IllegalStateException("Empty password from stdin is not allowed.");
         }
         return value.toCharArray();
+    }
+
+    private static byte[] readAllStdinBytes() throws IOException {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        byte[] buffer = new byte[8192];
+        int read;
+        while ((read = System.in.read(buffer)) != -1) {
+            output.write(buffer, 0, read);
+        }
+        return output.toByteArray();
     }
 
     private static String trimLine(String value) {

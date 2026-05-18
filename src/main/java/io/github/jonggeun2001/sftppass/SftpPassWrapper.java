@@ -10,6 +10,7 @@ import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
 
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -168,7 +169,7 @@ public class SftpPassWrapper implements Runnable {
         boolean passwordStdin;
 
         @Option(names = "--known-hosts", description = "Known hosts file. Default: ${DEFAULT-VALUE}.")
-        Path knownHosts = Path.of(System.getProperty("user.home"), ".ssh", "known_hosts");
+        Path knownHosts = Paths.get(System.getProperty("user.home"), ".ssh", "known_hosts");
 
         @Option(names = "--insecure", description = "Disable host key checking. Use only for controlled internal testing.")
         boolean insecure;
@@ -177,7 +178,7 @@ public class SftpPassWrapper implements Runnable {
         int timeoutMillis;
 
         String passwordEnvName() {
-            return passwordEnv == null || passwordEnv.isBlank() ? "SFTP_PASSWORD" : passwordEnv;
+            return passwordEnv == null || passwordEnv.trim().isEmpty() ? "SFTP_PASSWORD" : passwordEnv;
         }
     }
 
@@ -319,38 +320,89 @@ public class SftpPassWrapper implements Runnable {
     }
 
     private static void runBatchCommand(ChannelSftp sftp, List<String> args) throws Exception {
-        String command = args.getFirst().toLowerCase(Locale.ROOT);
+        String command = args.get(0).toLowerCase(Locale.ROOT);
         switch (command) {
-            case "put" -> requireArgs(args, 2, 3, "put <local> [remote]");
-            case "get" -> requireArgs(args, 2, 3, "get <remote> [local]");
-            case "ls" -> requireArgs(args, 1, 2, "ls [remote]");
-            case "rm" -> requireArgs(args, 2, 2, "rm <remote>");
-            case "mkdir" -> requireArgs(args, 2, 2, "mkdir <remote>");
-            case "rmdir" -> requireArgs(args, 2, 2, "rmdir <remote>");
-            case "rename", "mv" -> requireArgs(args, 3, 3, "rename <old> <new>");
-            case "cd" -> requireArgs(args, 2, 2, "cd <remote-dir>");
-            case "lcd" -> requireArgs(args, 2, 2, "lcd <local-dir>");
-            case "pwd", "lpwd", "bye", "quit", "exit" -> requireArgs(args, 1, 1, command);
-            default -> throw new IllegalArgumentException("Unsupported batch command: " + command);
+            case "put":
+                requireArgs(args, 2, 3, "put <local> [remote]");
+                break;
+            case "get":
+                requireArgs(args, 2, 3, "get <remote> [local]");
+                break;
+            case "ls":
+                requireArgs(args, 1, 2, "ls [remote]");
+                break;
+            case "rm":
+                requireArgs(args, 2, 2, "rm <remote>");
+                break;
+            case "mkdir":
+                requireArgs(args, 2, 2, "mkdir <remote>");
+                break;
+            case "rmdir":
+                requireArgs(args, 2, 2, "rmdir <remote>");
+                break;
+            case "rename":
+            case "mv":
+                requireArgs(args, 3, 3, "rename <old> <new>");
+                break;
+            case "cd":
+                requireArgs(args, 2, 2, "cd <remote-dir>");
+                break;
+            case "lcd":
+                requireArgs(args, 2, 2, "lcd <local-dir>");
+                break;
+            case "pwd":
+            case "lpwd":
+            case "bye":
+            case "quit":
+            case "exit":
+                requireArgs(args, 1, 1, command);
+                break;
+            default:
+                throw new IllegalArgumentException("Unsupported batch command: " + command);
         }
 
         switch (command) {
-            case "put" -> sftp.put(args.get(1), args.size() == 3 ? args.get(2) : ".");
-            case "get" -> sftp.get(args.get(1), args.size() == 3 ? args.get(2) : ".");
-            case "ls" -> printListing(sftp, args.size() == 2 ? args.get(1) : ".");
-            case "rm" -> sftp.rm(args.get(1));
-            case "mkdir" -> sftp.mkdir(args.get(1));
-            case "rmdir" -> sftp.rmdir(args.get(1));
-            case "rename", "mv" -> sftp.rename(args.get(1), args.get(2));
-            case "cd" -> sftp.cd(args.get(1));
-            case "lcd" -> sftp.lcd(args.get(1));
-            case "pwd" -> System.out.println(sftp.pwd());
-            case "lpwd" -> System.out.println(sftp.lpwd());
-            case "bye", "quit", "exit" -> {
+            case "put":
+                sftp.put(args.get(1), args.size() == 3 ? args.get(2) : ".");
+                break;
+            case "get":
+                sftp.get(args.get(1), args.size() == 3 ? args.get(2) : ".");
+                break;
+            case "ls":
+                printListing(sftp, args.size() == 2 ? args.get(1) : ".");
+                break;
+            case "rm":
+                sftp.rm(args.get(1));
+                break;
+            case "mkdir":
+                sftp.mkdir(args.get(1));
+                break;
+            case "rmdir":
+                sftp.rmdir(args.get(1));
+                break;
+            case "rename":
+            case "mv":
+                sftp.rename(args.get(1), args.get(2));
+                break;
+            case "cd":
+                sftp.cd(args.get(1));
+                break;
+            case "lcd":
+                sftp.lcd(args.get(1));
+                break;
+            case "pwd":
+                System.out.println(sftp.pwd());
+                break;
+            case "lpwd":
+                System.out.println(sftp.lpwd());
+                break;
+            case "bye":
+            case "quit":
+            case "exit":
                 // Stop processing by throwing a private signal.
                 throw new BatchExit();
-            }
-            default -> throw new IllegalArgumentException("Unsupported batch command: " + command);
+            default:
+                throw new IllegalArgumentException("Unsupported batch command: " + command);
         }
     }
 
