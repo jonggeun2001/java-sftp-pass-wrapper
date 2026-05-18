@@ -77,6 +77,61 @@ public class SftpPassWrapper implements Runnable {
         return new CommandLine(new SftpPassWrapper()).parseArgs(normalizeConnectionOptions(args));
     }
 
+    static int parseChmodMode(String mode) {
+        if (mode == null) {
+            throw new IllegalArgumentException("--chmod requires an octal mode.");
+        }
+
+        String normalized = mode.trim();
+        if (normalized.length() == 5 && normalized.charAt(0) == '0') {
+            normalized = normalized.substring(1);
+        }
+
+        if (normalized.length() < 3 || normalized.length() > 4) {
+            throw new IllegalArgumentException("Invalid --chmod mode: " + mode);
+        }
+
+        for (int i = 0; i < normalized.length(); i++) {
+            char digit = normalized.charAt(i);
+            if (digit < '0' || digit > '7') {
+                throw new IllegalArgumentException("Invalid --chmod mode: " + mode);
+            }
+        }
+
+        return Integer.parseInt(normalized, 8);
+    }
+
+    static String resolveChmodTargetPath(String local, String remote, boolean remoteIsDirectory) {
+        if (!remoteIsDirectory) {
+            return remote;
+        }
+
+        Path fileName = Paths.get(local).getFileName();
+        if (fileName == null) {
+            throw new IllegalArgumentException("Local file path must include a file name.");
+        }
+
+        if ("/".equals(remote)) {
+            return "/" + fileName;
+        }
+        if (remote.endsWith("/")) {
+            return remote + fileName;
+        }
+        return remote + "/" + fileName;
+    }
+
+    private static boolean isRemoteDirectory(ChannelSftp sftp, String remote) throws SftpException {
+        try {
+            SftpATTRS attrs = sftp.stat(remote);
+            return attrs.isDir();
+        } catch (SftpException e) {
+            if (e.id == ChannelSftp.SSH_FX_NO_SUCH_FILE) {
+                return false;
+            }
+            throw e;
+        }
+    }
+
     private static String[] normalizeConnectionOptions(String[] args) {
         int subcommandIndex = findSubcommandIndex(args);
         if (subcommandIndex <= 0) {
@@ -216,9 +271,30 @@ public class SftpPassWrapper implements Runnable {
         @Parameters(index = "1", description = "Remote file path.")
         String remote;
 
+        @Option(
+            names = "--chmod",
+            paramLabel = "MODE",
+            description = "Apply an octal mode to the remote file after upload, for example 777 or 0755."
+        )
+        void setChmod(String chmod) {
+            this.chmodMode = parseChmodMode(chmod);
+            this.chmod = chmod.trim();
+        }
+
+        String chmod;
+        private Integer chmodMode;
+
         @Override
         void execute(ChannelSftp sftp) throws SftpException {
+            String chmodTarget = null;
+            if (chmodMode != null) {
+                chmodTarget = resolveChmodTargetPath(local, remote, isRemoteDirectory(sftp, remote));
+            }
+
             sftp.put(local, remote);
+            if (chmodMode != null) {
+                sftp.chmod(chmodMode, chmodTarget);
+            }
         }
     }
 
