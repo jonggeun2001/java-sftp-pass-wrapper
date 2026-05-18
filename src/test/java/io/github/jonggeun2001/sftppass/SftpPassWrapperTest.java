@@ -55,4 +55,28 @@ class SftpPassWrapperTest {
         assertThrows(IllegalArgumentException.class, () -> SftpPassWrapper.parseChmodMode("999"));
         assertThrows(IllegalArgumentException.class, () -> SftpPassWrapper.parseChmodMode("abc"));
     }
+
+    @Test
+    void resolvesChmodTargetInsideRemoteDirectory() {
+        assertEquals(
+            "/upload/script.sh",
+            SftpPassWrapper.resolveChmodTargetPath("./script.sh", "/upload", true)
+        );
+        assertEquals(
+            "/upload/script.sh",
+            SftpPassWrapper.resolveChmodTargetPath("./script.sh", "/upload/", true)
+        );
+        assertEquals(
+            "/script.sh",
+            SftpPassWrapper.resolveChmodTargetPath("./script.sh", "/", true)
+        );
+    }
+
+    @Test
+    void keepsExplicitRemoteFileChmodTarget() {
+        assertEquals(
+            "/upload/renamed.sh",
+            SftpPassWrapper.resolveChmodTargetPath("./script.sh", "/upload/renamed.sh", false)
+        );
+    }
 }
