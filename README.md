@@ -7,6 +7,7 @@ This project does **not** try to feed a password into OpenSSH `sftp`. Instead, i
 ## Features
 
 - Password authentication via environment variable, stdin, password file, or interactive prompt
+- Custom SFTP port via `-P` / `--port` (defaults to `22`)
 - Basic SFTP commands: `put`, `get`, `ls`, `rm`, `mkdir`, `rmdir`, `rename`
 - Batch mode for a practical subset of OpenSSH `sftp -b` scripts
 - Strict host key checking by default via `~/.ssh/known_hosts`
@@ -48,6 +49,15 @@ java -jar build/libs/java-sftp-pass-wrapper-0.1.0-SNAPSHOT-all.jar \
 printf '%s' "$SFTP_PASSWORD" | java -jar build/libs/java-sftp-pass-wrapper-0.1.0-SNAPSHOT-all.jar \
   --host sftp.example.com --user deploy --password-stdin \
   get /upload/report.csv ./report.csv
+```
+
+### Use a custom port
+
+```bash
+export SFTP_PASSWORD='secret'
+java -jar build/libs/java-sftp-pass-wrapper-0.1.0-SNAPSHOT-all.jar \
+  --host sftp.example.com --user deploy --port 2222 \
+  ls /upload
 ```
 
 ### Run batch commands
