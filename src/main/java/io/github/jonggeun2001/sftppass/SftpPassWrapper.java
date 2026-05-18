@@ -16,6 +16,8 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -39,11 +41,11 @@ import java.util.concurrent.Callable;
     }
 )
 public class SftpPassWrapper implements Runnable {
-    private static final Set<String> SUBCOMMAND_NAMES = Set.of(
+    private static final Set<String> SUBCOMMAND_NAMES = setOf(
         "put", "get", "ls", "rm", "mkdir", "rmdir", "rename", "mv", "batch"
     );
 
-    private static final Set<String> VALUE_CONNECTION_OPTIONS = Set.of(
+    private static final Set<String> VALUE_CONNECTION_OPTIONS = setOf(
         "--host", "-H",
         "--port", "-P",
         "--user", "-u",
@@ -53,10 +55,14 @@ public class SftpPassWrapper implements Runnable {
         "--timeout"
     );
 
-    private static final Set<String> FLAG_CONNECTION_OPTIONS = Set.of(
+    private static final Set<String> FLAG_CONNECTION_OPTIONS = setOf(
         "--password-stdin",
         "--insecure"
     );
+
+    private static Set<String> setOf(String... values) {
+        return Collections.unmodifiableSet(new HashSet<>(Arrays.asList(values)));
+    }
 
     public static void main(String[] args) {
         int exitCode = execute(args);
@@ -103,7 +109,7 @@ public class SftpPassWrapper implements Runnable {
         normalized.add(args[subcommandIndex]);
         normalized.addAll(connectionOptions);
         normalized.addAll(Arrays.asList(args).subList(subcommandIndex + 1, args.length));
-        return normalized.toArray(String[]::new);
+        return normalized.toArray(new String[0]);
     }
 
     private static int findSubcommandIndex(String[] args) {

@@ -12,4 +12,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$ROOT_DIR"
 
+if grep -R -n -E 'Set\.of\(|List\.of\(|Map\.of\(|toArray\([^)]*::new\)|Path\.of\(|Files\.readString\(|readAllBytes\(\)|\.isBlank\(|\.getFirst\(|(^|[^[:alnum:]_])record([^[:alnum:]_]|$)|case .*->' src/main/java src/test/java; then
+  echo "Java 8 compatibility check failed: Java 9+ syntax/API usage was found." >&2
+  exit 1
+fi
+
 ./gradlew test

@@ -16,7 +16,7 @@ class SftpPassWrapperTest {
             "/upload"
         );
 
-        SftpPassWrapper.Ls command = result.subcommand().commandSpec().userObject();
+        SftpPassWrapper.Ls command = (SftpPassWrapper.Ls) result.subcommand().commandSpec().userObject();
 
         assertEquals("sftp.example.com", command.options.host);
         assertEquals("deploy", command.options.user);
