@@ -101,6 +101,37 @@ public class SftpPassWrapper implements Runnable {
         return Integer.parseInt(normalized, 8);
     }
 
+    static String resolveChmodTargetPath(String local, String remote, boolean remoteIsDirectory) {
+        if (!remoteIsDirectory) {
+            return remote;
+        }
+
+        Path fileName = Paths.get(local).getFileName();
+        if (fileName == null) {
+            throw new IllegalArgumentException("Local file path must include a file name.");
+        }
+
+        if ("/".equals(remote)) {
+            return "/" + fileName;
+        }
+        if (remote.endsWith("/")) {
+            return remote + fileName;
+        }
+        return remote + "/" + fileName;
+    }
+
+    private static boolean isRemoteDirectory(ChannelSftp sftp, String remote) throws SftpException {
+        try {
+            SftpATTRS attrs = sftp.stat(remote);
+            return attrs.isDir();
+        } catch (SftpException e) {
+            if (e.id == ChannelSftp.SSH_FX_NO_SUCH_FILE) {
+                return false;
+            }
+            throw e;
+        }
+    }
+
     private static String[] normalizeConnectionOptions(String[] args) {
         int subcommandIndex = findSubcommandIndex(args);
         if (subcommandIndex <= 0) {
@@ -255,9 +286,14 @@ public class SftpPassWrapper implements Runnable {
 
         @Override
         void execute(ChannelSftp sftp) throws SftpException {
+            String chmodTarget = null;
+            if (chmodMode != null) {
+                chmodTarget = resolveChmodTargetPath(local, remote, isRemoteDirectory(sftp, remote));
+            }
+
             sftp.put(local, remote);
             if (chmodMode != null) {
-                sftp.chmod(chmodMode, remote);
+                sftp.chmod(chmodMode, chmodTarget);
             }
         }
     }
