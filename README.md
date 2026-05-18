@@ -39,9 +39,11 @@ Or use Gradle's application distribution:
 ## Tagged builds
 
 Pushing any Git tag runs the `Build fat JAR on tag` GitHub Actions workflow.
-The workflow executes `./gradlew clean test fatJar` with Java 8 and uploads
-`build/libs/*-all.jar` as a workflow artifact named with the tag. Tag
-characters that are not safe in artifact names are replaced with `-`.
+The workflow executes `./gradlew clean test fatJar` with Java 8, uploads
+`build/libs/*-all.jar` as a workflow artifact named with the tag, and attaches
+the same jar to the matching GitHub Release. If the GitHub Release does not
+exist yet, the workflow creates it from the tag first. Tag characters that are
+not safe in artifact names are replaced with `-`.
 
 ## Release preparation
 
