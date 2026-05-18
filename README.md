@@ -9,6 +9,7 @@ This project does **not** try to feed a password into OpenSSH `sftp`. Instead, i
 - Password authentication via environment variable, stdin, password file, or interactive prompt
 - Custom SFTP port via `-P` / `--port` (defaults to `22`)
 - Basic SFTP commands: `put`, `get`, `ls`, `rm`, `mkdir`, `rmdir`, `rename`
+- Optional post-upload chmod via `put --chmod <mode>`
 - Batch mode for a practical subset of OpenSSH `sftp -b` scripts
 - Strict host key checking by default via `~/.ssh/known_hosts`
 - Optional `--insecure` mode for legacy/internal environments
@@ -64,6 +65,18 @@ export SFTP_PASSWORD='secret'
 java -jar build/libs/java-sftp-pass-wrapper-0.1.0-SNAPSHOT-all.jar \
   --host sftp.example.com --user deploy \
   put ./local.txt /upload/local.txt
+```
+
+### Upload a file and set permissions
+
+`--chmod` accepts a 3- or 4-digit octal mode such as `777`, `0755`, or `1777`.
+The mode is applied to the remote file after the upload succeeds.
+
+```bash
+export SFTP_PASSWORD='secret'
+java -jar build/libs/java-sftp-pass-wrapper-0.1.0-SNAPSHOT-all.jar \
+  --host sftp.example.com --user deploy \
+  put --chmod 777 ./script.sh /upload/script.sh
 ```
 
 ### Download a file with password from stdin
