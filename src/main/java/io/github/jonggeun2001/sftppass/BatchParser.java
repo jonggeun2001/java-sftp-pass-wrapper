@@ -1,6 +1,7 @@
 package io.github.jonggeun2001.sftppass;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 final class BatchParser {
@@ -18,15 +19,16 @@ final class BatchParser {
         boolean scanning = true;
         while (scanning && !line.isEmpty()) {
             switch (line.charAt(0)) {
-                case '-' -> {
+                case '-':
                     ignoreErrors = true;
                     line = line.substring(1).trim();
-                }
-                case '@' -> {
+                    break;
+                case '@':
                     silent = true;
                     line = line.substring(1).trim();
-                }
-                default -> scanning = false;
+                    break;
+                default:
+                    scanning = false;
             }
         }
 
@@ -98,7 +100,7 @@ final class BatchParser {
                 continue;
             }
             if (Character.isWhitespace(c) && !singleQuote && !doubleQuote) {
-                if (!current.isEmpty()) {
+                if (current.length() > 0) {
                     tokens.add(current.toString());
                     current.setLength(0);
                 }
@@ -113,15 +115,43 @@ final class BatchParser {
         if (singleQuote || doubleQuote) {
             throw new IllegalArgumentException("Unclosed quote in batch line: " + line);
         }
-        if (!current.isEmpty()) {
+        if (current.length() > 0) {
             tokens.add(current.toString());
         }
         return tokens;
     }
 
-    record ParsedLine(List<String> tokens, boolean ignoreErrors, boolean silent, boolean empty) {
+    static final class ParsedLine {
+        private final List<String> tokens;
+        private final boolean ignoreErrors;
+        private final boolean silent;
+        private final boolean empty;
+
+        ParsedLine(List<String> tokens, boolean ignoreErrors, boolean silent, boolean empty) {
+            this.tokens = tokens;
+            this.ignoreErrors = ignoreErrors;
+            this.silent = silent;
+            this.empty = empty;
+        }
+
         static ParsedLine blank() {
-            return new ParsedLine(List.of(), false, false, true);
+            return new ParsedLine(Collections.emptyList(), false, false, true);
+        }
+
+        List<String> tokens() {
+            return tokens;
+        }
+
+        boolean ignoreErrors() {
+            return ignoreErrors;
+        }
+
+        boolean silent() {
+            return silent;
+        }
+
+        boolean empty() {
+            return empty;
         }
     }
 }
