@@ -16,6 +16,8 @@ This project does **not** try to feed a password into OpenSSH `sftp`. Instead, i
 ## Build
 
 This project targets Java 8 / 1.8.
+The worktree verification script checks for common Java 9+ syntax/API usage
+before running the Gradle test suite.
 
 ```bash
 ./gradlew clean test fatJar
