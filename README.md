@@ -41,6 +41,16 @@ The workflow executes `./gradlew clean test fatJar` with Java 8 and uploads
 `build/libs/*-all.jar` as a workflow artifact named with the tag. Tag
 characters that are not safe in artifact names are replaced with `-`.
 
+## Release preparation
+
+The release tag flow uses `.agents/release-tag-manager/version-bump.sh` to
+update the Gradle project version before promoting `main` to `release`. The
+hook is intentionally limited to `build.gradle.kts`, as listed in
+`.agents/release-tag-manager/version-bump-allowlist.txt`.
+
+Before running release tagging for the first time, create `origin/release` from
+the reviewed `main` commit that should become the initial release baseline.
+
 ## Examples
 
 ### Upload a file
