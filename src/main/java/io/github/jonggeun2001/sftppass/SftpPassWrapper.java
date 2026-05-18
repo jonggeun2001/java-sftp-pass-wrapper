@@ -13,8 +13,11 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.Vector;
 import java.util.concurrent.Callable;
 
@@ -35,9 +38,103 @@ import java.util.concurrent.Callable;
     }
 )
 public class SftpPassWrapper implements Runnable {
+    private static final Set<String> SUBCOMMAND_NAMES = Set.of(
+        "put", "get", "ls", "rm", "mkdir", "rmdir", "rename", "mv", "batch"
+    );
+
+    private static final Set<String> VALUE_CONNECTION_OPTIONS = Set.of(
+        "--host", "-H",
+        "--port", "-P",
+        "--user", "-u",
+        "--password-env",
+        "--password-file",
+        "--known-hosts",
+        "--timeout"
+    );
+
+    private static final Set<String> FLAG_CONNECTION_OPTIONS = Set.of(
+        "--password-stdin",
+        "--insecure"
+    );
+
     public static void main(String[] args) {
-        int exitCode = new CommandLine(new SftpPassWrapper()).execute(args);
+        int exitCode = execute(args);
         System.exit(exitCode);
+    }
+
+    static int execute(String... args) {
+        return new CommandLine(new SftpPassWrapper()).execute(normalizeConnectionOptions(args));
+    }
+
+    static CommandLine.ParseResult parseArgs(String... args) {
+        return new CommandLine(new SftpPassWrapper()).parseArgs(normalizeConnectionOptions(args));
+    }
+
+    private static String[] normalizeConnectionOptions(String[] args) {
+        int subcommandIndex = findSubcommandIndex(args);
+        if (subcommandIndex <= 0) {
+            return args;
+        }
+
+        List<String> prefix = new ArrayList<>();
+        List<String> connectionOptions = new ArrayList<>();
+
+        for (int i = 0; i < subcommandIndex; i++) {
+            String arg = args[i];
+            if (isInlineValueConnectionOption(arg) || FLAG_CONNECTION_OPTIONS.contains(arg)) {
+                connectionOptions.add(arg);
+            } else if (VALUE_CONNECTION_OPTIONS.contains(arg)) {
+                connectionOptions.add(arg);
+                if (i + 1 < subcommandIndex) {
+                    connectionOptions.add(args[++i]);
+                }
+            } else {
+                prefix.add(arg);
+            }
+        }
+
+        if (connectionOptions.isEmpty()) {
+            return args;
+        }
+
+        List<String> normalized = new ArrayList<>(args.length);
+        normalized.addAll(prefix);
+        normalized.add(args[subcommandIndex]);
+        normalized.addAll(connectionOptions);
+        normalized.addAll(Arrays.asList(args).subList(subcommandIndex + 1, args.length));
+        return normalized.toArray(String[]::new);
+    }
+
+    private static int findSubcommandIndex(String[] args) {
+        for (int i = 0; i < args.length; i++) {
+            String arg = args[i];
+            if (isInlineValueConnectionOption(arg)) {
+                continue;
+            }
+            if (VALUE_CONNECTION_OPTIONS.contains(arg)) {
+                i++;
+                continue;
+            }
+            if (SUBCOMMAND_NAMES.contains(arg)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static boolean isInlineValueConnectionOption(String arg) {
+        return arg.startsWith("--host=")
+            || arg.startsWith("--port=")
+            || arg.startsWith("--user=")
+            || arg.startsWith("--password-env=")
+            || arg.startsWith("--password-file=")
+            || arg.startsWith("--known-hosts=")
+            || arg.startsWith("--timeout=")
+            || (arg.length() > 2 && (
+                arg.startsWith("-H")
+                    || arg.startsWith("-P")
+                    || arg.startsWith("-u")
+            ));
     }
 
     @Override
