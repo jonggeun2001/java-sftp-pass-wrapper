@@ -32,6 +32,8 @@ import java.util.concurrent.Callable;
     subcommands = {
         SftpPassWrapper.Put.class,
         SftpPassWrapper.Get.class,
+        SftpPassWrapper.Mput.class,
+        SftpPassWrapper.Mget.class,
         SftpPassWrapper.Ls.class,
         SftpPassWrapper.Rm.class,
         SftpPassWrapper.Mkdir.class,
@@ -42,7 +44,7 @@ import java.util.concurrent.Callable;
 )
 public class SftpPassWrapper implements Runnable {
     private static final Set<String> SUBCOMMAND_NAMES = setOf(
-        "put", "get", "ls", "rm", "mkdir", "rmdir", "rename", "mv", "batch"
+        "put", "get", "mput", "mget", "ls", "rm", "mkdir", "rmdir", "rename", "mv", "batch"
     );
 
     private static final Set<String> VALUE_CONNECTION_OPTIONS = setOf(
@@ -281,11 +283,18 @@ public class SftpPassWrapper implements Runnable {
             this.chmod = chmod.trim();
         }
 
+        @Option(names = {"-r", "-R", "--recursive"}, description = "Upload directories recursively without following symbolic links.")
+        boolean recursive;
+
         String chmod;
         private Integer chmodMode;
 
         @Override
-        void execute(ChannelSftp sftp) throws SftpException {
+        void execute(ChannelSftp sftp) throws Exception {
+            if (recursive) {
+                new SftpTransfers(sftp).upload(local, remote, true, false, chmodMode);
+                return;
+            }
             String chmodTarget = null;
             if (chmodMode != null) {
                 chmodTarget = resolveChmodTargetPath(local, remote, isRemoteDirectory(sftp, remote));
@@ -300,6 +309,9 @@ public class SftpPassWrapper implements Runnable {
 
     @Command(name = "get", description = "Download a remote file to a local path.", mixinStandardHelpOptions = true)
     static class Get extends SftpAction {
+        @Option(names = {"-r", "-R", "--recursive"}, description = "Download directories recursively without following symbolic links.")
+        boolean recursive;
+
         @Parameters(index = "0", description = "Remote file path.")
         String remote;
 
@@ -307,8 +319,50 @@ public class SftpPassWrapper implements Runnable {
         String local;
 
         @Override
-        void execute(ChannelSftp sftp) throws SftpException {
-            sftp.get(remote, local);
+        void execute(ChannelSftp sftp) throws Exception {
+            if (recursive) new SftpTransfers(sftp).download(remote, local, true, false);
+            else sftp.get(remote, local);
+        }
+    }
+
+    @Command(name = "mput", description = "Upload files matching a pattern to an existing remote directory.", mixinStandardHelpOptions = true)
+    static class Mput extends SftpAction {
+        @Parameters(index = "0", description = "Local path or pattern (* and ? in the basename). Quote patterns in your shell.")
+        String local;
+
+        @Parameters(index = "1", arity = "0..1", defaultValue = ".", description = "Existing remote directory. Default: current directory.")
+        String remote;
+
+        @Option(names = {"-r", "-R", "--recursive"}, description = "Upload directories recursively without following symbolic links.")
+        boolean recursive;
+
+        @Option(names = "--chmod", paramLabel = "MODE", description = "Apply an octal mode to each uploaded file (not directories).")
+        void setChmod(String value) {
+            chmodMode = parseChmodMode(value);
+        }
+
+        Integer chmodMode;
+
+        @Override
+        void execute(ChannelSftp sftp) throws Exception {
+            new SftpTransfers(sftp).upload(local, remote, recursive, true, chmodMode);
+        }
+    }
+
+    @Command(name = "mget", description = "Download files matching a pattern to an existing local directory.", mixinStandardHelpOptions = true)
+    static class Mget extends SftpAction {
+        @Parameters(index = "0", description = "Remote path or pattern (* and ? in the basename). Quote patterns in your shell.")
+        String remote;
+
+        @Parameters(index = "1", arity = "0..1", defaultValue = ".", description = "Existing local directory. Default: current directory.")
+        String local;
+
+        @Option(names = {"-r", "-R", "--recursive"}, description = "Download directories recursively without following symbolic links.")
+        boolean recursive;
+
+        @Override
+        void execute(ChannelSftp sftp) throws Exception {
+            new SftpTransfers(sftp).download(remote, local, recursive, true);
         }
     }
 
@@ -403,13 +457,11 @@ public class SftpPassWrapper implements Runnable {
 
     private static void runBatchCommand(ChannelSftp sftp, List<String> args) throws Exception {
         String command = args.get(0).toLowerCase(Locale.ROOT);
+        if (setOf("put", "get", "mput", "mget").contains(command)) {
+            runBatchTransfer(sftp, command, args.subList(1, args.size()));
+            return;
+        }
         switch (command) {
-            case "put":
-                requireArgs(args, 2, 3, "put <local> [remote]");
-                break;
-            case "get":
-                requireArgs(args, 2, 3, "get <remote> [local]");
-                break;
             case "ls":
                 requireArgs(args, 1, 2, "ls [remote]");
                 break;
@@ -444,12 +496,6 @@ public class SftpPassWrapper implements Runnable {
         }
 
         switch (command) {
-            case "put":
-                sftp.put(args.get(1), args.size() == 3 ? args.get(2) : ".");
-                break;
-            case "get":
-                sftp.get(args.get(1), args.size() == 3 ? args.get(2) : ".");
-                break;
             case "ls":
                 printListing(sftp, args.size() == 2 ? args.get(1) : ".");
                 break;
@@ -485,6 +531,46 @@ public class SftpPassWrapper implements Runnable {
                 throw new BatchExit();
             default:
                 throw new IllegalArgumentException("Unsupported batch command: " + command);
+        }
+    }
+
+    private static void runBatchTransfer(ChannelSftp sftp, String command, List<String> args) throws Exception {
+        boolean upload = command.endsWith("put");
+        boolean multiple = command.startsWith("m");
+        boolean recursive = false;
+        boolean options = true;
+        Integer chmod = null;
+        List<String> paths = new ArrayList<>();
+        for (int i = 0; i < args.size(); i++) {
+            String arg = args.get(i);
+            if (options && "--".equals(arg)) {
+                options = false;
+            } else if (options && ("-r".equals(arg) || "-R".equals(arg) || "--recursive".equals(arg))) {
+                recursive = true;
+            } else if (options && upload && "--chmod".equals(arg)) {
+                if (++i >= args.size()) throw new IllegalArgumentException("--chmod requires a mode.");
+                chmod = parseChmodMode(args.get(i));
+            } else if (options && arg.startsWith("-")) {
+                throw new IllegalArgumentException("Unsupported transfer option: " + arg);
+            } else {
+                paths.add(arg);
+            }
+        }
+        requireArgs(paths, 1, 2, command + " [-r] " + (upload ? "[--chmod MODE] " : "") + "<source> [target]");
+        String source = paths.get(0);
+        String target = paths.size() == 2 ? paths.get(1) : ".";
+        if (upload) {
+            if (recursive || multiple) new SftpTransfers(sftp).upload(source, target, recursive, multiple, chmod);
+            else {
+                Put put = new Put();
+                put.local = source;
+                put.remote = target;
+                put.chmodMode = chmod;
+                put.execute(sftp);
+            }
+        } else {
+            if (recursive || multiple) new SftpTransfers(sftp).download(source, target, recursive, multiple);
+            else sftp.get(source, target);
         }
     }
 
