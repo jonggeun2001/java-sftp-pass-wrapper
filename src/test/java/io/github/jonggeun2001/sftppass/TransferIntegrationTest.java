@@ -236,4 +236,37 @@ class TransferIntegrationTest {
         assertEquals(0600, sftp.stat("/remote.txt").getPermissions() & 0777);
     }
 
+    @Test
+    void localParentTraversalCannotHideASymlinkBeforeNormalization() throws Exception {
+        write(remote.resolve("file.txt"), "new");
+        write(local.resolve("result.txt"), "original");
+        Files.createDirectory(local.resolve("other"));
+        Files.createSymbolicLink(local.resolve("link"), local.resolve("other"));
+        assertThrows(IOException.class, () -> command("get", "-r", "/file.txt", "link/../result.txt"));
+        assertEquals("original", read(local.resolve("result.txt")));
+        assertThrows(IOException.class, () -> command("put", "-r", "link/../result.txt", "/uploaded.txt"));
+        assertFalse(Files.exists(remote.resolve("uploaded.txt")));
+    }
+
+    @Test
+    void remoteParentTraversalCannotHideASymlinkBeforeNormalization() throws Exception {
+        write(local.resolve("file.txt"), "new");
+        write(remote.resolve("result.txt"), "original");
+        Files.createDirectory(remote.resolve("other"));
+        Files.createSymbolicLink(remote.resolve("link"), remote.resolve("other"));
+        assertThrows(IOException.class, () -> command("put", "-r", "file.txt", "/link/../result.txt"));
+        assertEquals("original", read(remote.resolve("result.txt")));
+        assertThrows(IOException.class, () -> command("get", "-r", "/link/../result.txt", "downloaded.txt"));
+        assertFalse(Files.exists(local.resolve("downloaded.txt")));
+    }
+
+    @Test
+    void unmatchedNonportableRemoteNamesDoNotBreakPatternDownloads() throws Exception {
+        write(remote.resolve("report.csv"), "report");
+        write(remote.resolve("backup:old.txt"), "unselected");
+        command("mget", "/*.csv");
+        assertEquals("report", read(local.resolve("report.csv")));
+        assertThrows(IOException.class, () -> command("mget", "/backup*"));
+    }
+
 }

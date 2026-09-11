@@ -141,21 +141,27 @@ final class SftpTransfers {
         for (ChannelSftp.LsEntry entry : listing(parent)) {
             String name = entry.getFilename();
             if (".".equals(name) || "..".equals(name)) continue;
-            validateName(name);
-            if (pattern.matcher(name).matches()) matches.add(join(parent, name));
+            if (pattern.matcher(name).matches()) {
+                validateName(name);
+                matches.add(join(parent, name));
+            }
         }
         if (matches.isEmpty()) throw new IOException("No files match: " + source);
         Collections.sort(matches);
         return matches;
     }
 
-    private Path localPath(String path) {
+    private Path localPath(String path) throws IOException {
         Path parsed = Paths.get(path);
-        return (parsed.isAbsolute() ? parsed : Paths.get(sftp.lpwd()).resolve(parsed)).toAbsolutePath().normalize();
+        Path absolute = (parsed.isAbsolute() ? parsed : Paths.get(sftp.lpwd()).resolve(parsed)).toAbsolutePath();
+        // Check the supplied path before normalization can erase a link/.. component.
+        checkLocalAncestors(absolute);
+        return absolute.normalize();
     }
 
     private String remotePath(String path) throws SftpException, IOException {
         String absolute = path.startsWith("/") ? path : join(sftp.pwd(), path);
+        checkRemoteAncestors(absolute);
         List<String> parts = new ArrayList<>();
         for (String part : absolute.split("/")) {
             if (part.isEmpty() || ".".equals(part)) continue;

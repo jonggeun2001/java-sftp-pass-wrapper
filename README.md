@@ -132,7 +132,8 @@ a matched directory without `-r` is also an error.
 
 Recursive and multi-file transfers reject symbolic links and special files,
 including links in source/destination ancestors, rather than following them.
-Downloaded entry names containing path separators or a colon are rejected for
+This check also applies before resolving `..` components.
+Selected download entry names containing path separators or a colon are rejected for
 portable, safe local paths. Existing regular files are overwritten. Transfers
 stop on the first failure and are not atomic: files/directories already copied
 and a partially written file can remain. `--chmod` applies after each successful
