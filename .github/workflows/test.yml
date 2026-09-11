@@ -23,3 +23,22 @@ jobs:
           cache: gradle
       - name: Verify Java 8 compatibility and SFTP transfers
         run: bash scripts/verify-worktree.sh
+
+  windows-patterns:
+    name: Windows pattern transfers
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "8"
+          cache: gradle
+      - name: Verify pattern transfers on the Windows filesystem
+        shell: bash
+        run: >-
+          bash scripts/verify-worktree.sh
+          --tests '*.TransferIntegrationTest.multipleTransfersExpandOnlyMatchingFiles'
+          --tests '*.TransferIntegrationTest.questionMarkPatternAndDefaultDownloadDirectoryWork'
