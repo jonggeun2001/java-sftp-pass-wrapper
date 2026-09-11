@@ -4,6 +4,7 @@ import com.jcraft.jsch.ChannelSftp;
 import com.jcraft.jsch.SftpATTRS;
 import com.jcraft.jsch.SftpException;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -110,14 +111,18 @@ final class SftpTransfers {
     }
 
     private List<Path> localSources(String source, boolean multiple) throws IOException {
-        Path path = localPath(source);
-        if (!multiple || path.getFileName() == null || !hasPattern(path.getFileName().toString())) {
-            return Collections.singletonList(path);
+        if (!multiple || !hasPattern(source)) {
+            return Collections.singletonList(localPath(source));
         }
-        Path parent = path.getParent();
-        if (hasPattern(parent.toString())) throw new IOException("Patterns are supported only in the final path component.");
-        checkLocalAncestors(parent);
-        Pattern pattern = pattern(path.getFileName().toString());
+        // A Windows Path cannot contain glob characters: parse only the parent as a Path.
+        int separator = Math.max(source.lastIndexOf('/'), source.lastIndexOf(File.separatorChar));
+        if (separator < 0 && File.separatorChar == '\\' && source.length() >= 2 && source.charAt(1) == ':') {
+            separator = 1; // Drive-relative pattern, e.g. C:*.csv.
+        }
+        String parentText = separator < 0 ? "." : source.substring(0, separator + 1);
+        if (hasPattern(parentText)) throw new IOException("Patterns are supported only in the final path component.");
+        Path parent = localPath(parentText);
+        Pattern pattern = pattern(source.substring(separator + 1));
         List<Path> matches = new ArrayList<>();
         try (DirectoryStream<Path> children = Files.newDirectoryStream(parent)) {
             for (Path child : children) {
@@ -130,7 +135,7 @@ final class SftpTransfers {
     }
 
     private List<String> remoteSources(String source, boolean multiple) throws IOException, SftpException {
-        String path = remotePath(source);
+        String path = remotePath(source, multiple);
         if (!multiple || !hasPattern(path)) return Collections.singletonList(path);
         int slash = path.lastIndexOf('/');
         String parent = slash == 0 ? "/" : path.substring(0, slash);
@@ -160,8 +165,19 @@ final class SftpTransfers {
     }
 
     private String remotePath(String path) throws SftpException, IOException {
+        return remotePath(path, false);
+    }
+
+    private String remotePath(String path, boolean patternSource) throws SftpException, IOException {
         String absolute = path.startsWith("/") ? path : join(sftp.pwd(), path);
-        checkRemoteAncestors(absolute);
+        String checkedPath = absolute;
+        if (patternSource && hasPattern(absolute)) {
+            int slash = absolute.lastIndexOf('/');
+            checkedPath = slash == 0 ? "/" : absolute.substring(0, slash);
+            if (hasPattern(checkedPath)) throw new IOException("Patterns are supported only in the final path component.");
+        }
+        // Never stat a glob as a literal filename; some servers reject such filenames.
+        checkRemoteAncestors(checkedPath);
         List<String> parts = new ArrayList<>();
         for (String part : absolute.split("/")) {
             if (part.isEmpty() || ".".equals(part)) continue;

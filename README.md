@@ -23,7 +23,9 @@ The worktree verification script checks for common Java 9+ syntax/API usage
 before running the Gradle test suite. PRs and pushes to `main` also run
 `scripts/verify-worktree.sh` on Java 8 in CI. Transfer integration tests start
 an isolated SFTP server on loopback with an ephemeral port and temporary files;
-no external server or credentials are needed.
+no external server or credentials are needed. Windows CI additionally verifies
+pattern transfers on Java 8. Optional Gradle test filters can be passed to
+`scripts/verify-worktree.sh --tests '*TransferIntegrationTest'`.
 
 ```bash
 ./gradlew clean test fatJar
