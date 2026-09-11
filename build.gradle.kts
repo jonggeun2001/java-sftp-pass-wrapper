@@ -24,6 +24,7 @@ dependencies {
     implementation("com.github.mwiede:jsch:0.2.25")
     implementation("info.picocli:picocli:4.7.7")
 
+    testImplementation("org.apache.sshd:sshd-sftp:2.12.1")
     testImplementation(platform("org.junit:junit-bom:5.11.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
@@ -31,6 +32,7 @@ dependencies {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+    testLogging.exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
 }
 
 tasks.withType<JavaCompile> {
