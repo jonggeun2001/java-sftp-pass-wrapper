@@ -3,10 +3,49 @@ package io.github.jonggeun2001.sftppass;
 import org.junit.jupiter.api.Test;
 import picocli.CommandLine;
 
+import java.util.Arrays;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class SftpPassWrapperTest {
+    @Test
+    void execPreservesRemoteOptionsAndLiteralArguments() {
+        CommandLine.ParseResult result = SftpPassWrapper.parseArgs(
+            "--host", "ssh.example.com", "--user", "deploy", "--port", "2222",
+            "exec", "sh", "/upload/script.sh", "two words", "", "--host", "remote-value",
+            "--help", "--", "@literal-file", "a'b", "$(touch injected)"
+        );
+        SftpPassWrapper.Exec command = (SftpPassWrapper.Exec) result.subcommand().commandSpec().userObject();
+
+        assertEquals("ssh.example.com", command.options.host);
+        assertEquals(2222, command.options.port);
+        assertEquals(Arrays.asList("sh", "/upload/script.sh", "two words", "", "--host", "remote-value",
+            "--help", "--", "@literal-file", "a'b", "$(touch injected)"), command.command);
+    }
+
+    @Test
+    void execAcceptsConnectionOptionsAfterSubcommandAndExplicitDelimiter() {
+        CommandLine.ParseResult result = SftpPassWrapper.parseArgs(
+            "exec", "--host", "ssh.example.com", "--user", "deploy", "--", "-program", "-x"
+        );
+        SftpPassWrapper.Exec command = (SftpPassWrapper.Exec) result.subcommand().commandSpec().userObject();
+
+        assertEquals("deploy", command.options.user);
+        assertEquals(Arrays.asList("-program", "-x"), command.command);
+    }
+
+    @Test
+    void execRequiresACommandAndRejectsEmptyExecutableAndNul() {
+        assertThrows(CommandLine.MissingParameterException.class, () -> SftpPassWrapper.parseArgs(
+            "--host", "ssh.example.com", "--user", "deploy", "exec"));
+        for (String[] args : new String[][] { {""}, {"echo", "bad\0argument"} }) {
+            SftpPassWrapper.Exec command = new SftpPassWrapper.Exec();
+            command.command = Arrays.asList(args);
+            assertThrows(IllegalArgumentException.class, command::remoteCommand);
+        }
+    }
+
     @Test
     void acceptsPortBeforeSubcommand() {
         CommandLine.ParseResult result = SftpPassWrapper.parseArgs(
