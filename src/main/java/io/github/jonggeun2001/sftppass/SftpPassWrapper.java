@@ -1,6 +1,8 @@
 package io.github.jonggeun2001.sftppass;
 
+import com.jcraft.jsch.ChannelExec;
 import com.jcraft.jsch.ChannelSftp;
+import com.jcraft.jsch.Session;
 import com.jcraft.jsch.SftpATTRS;
 import com.jcraft.jsch.SftpException;
 import picocli.CommandLine;
@@ -9,6 +11,8 @@ import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Instant;
@@ -26,7 +30,7 @@ import java.util.concurrent.Callable;
 
 @Command(
     name = "sftp-pass",
-    description = "Password-based SFTP helper for environments without sshpass.",
+    description = "Password-based SFTP and SSH exec helper for environments without sshpass.",
     mixinStandardHelpOptions = true,
     version = "sftp-pass 0.1.0",
     subcommands = {
@@ -39,12 +43,13 @@ import java.util.concurrent.Callable;
         SftpPassWrapper.Mkdir.class,
         SftpPassWrapper.Rmdir.class,
         SftpPassWrapper.Rename.class,
-        SftpPassWrapper.Batch.class
+        SftpPassWrapper.Batch.class,
+        SftpPassWrapper.Exec.class
     }
 )
 public class SftpPassWrapper implements Runnable {
     private static final Set<String> SUBCOMMAND_NAMES = setOf(
-        "put", "get", "mput", "mget", "ls", "rm", "mkdir", "rmdir", "rename", "mv", "batch"
+        "put", "get", "mput", "mget", "ls", "rm", "mkdir", "rmdir", "rename", "mv", "batch", "exec"
     );
 
     private static final Set<String> VALUE_CONNECTION_OPTIONS = setOf(
@@ -72,11 +77,21 @@ public class SftpPassWrapper implements Runnable {
     }
 
     static int execute(String... args) {
-        return new CommandLine(new SftpPassWrapper()).execute(normalizeConnectionOptions(args));
+        return commandLine(args).execute(normalizeConnectionOptions(args));
     }
 
     static CommandLine.ParseResult parseArgs(String... args) {
-        return new CommandLine(new SftpPassWrapper()).parseArgs(normalizeConnectionOptions(args));
+        return commandLine(args).parseArgs(normalizeConnectionOptions(args));
+    }
+
+    private static CommandLine commandLine(String[] args) {
+        CommandLine commandLine = new CommandLine(new SftpPassWrapper());
+        commandLine.getSubcommands().get("exec").setStopAtPositional(true);
+        int index = findSubcommandIndex(args);
+        if (index >= 0 && "exec".equals(args[index])) {
+            commandLine.setExpandAtFiles(false);
+        }
+        return commandLine;
     }
 
     static int parseChmodMode(String mode) {
@@ -207,13 +222,13 @@ public class SftpPassWrapper implements Runnable {
     }
 
     static class ConnectionOptions {
-        @Option(names = {"-H", "--host"}, required = true, description = "SFTP server hostname or IP.")
+        @Option(names = {"-H", "--host"}, required = true, description = "SSH/SFTP server hostname or IP.")
         String host;
 
-        @Option(names = {"-P", "--port"}, defaultValue = "22", description = "SFTP server port. Default: ${DEFAULT-VALUE}.")
+        @Option(names = {"-P", "--port"}, defaultValue = "22", description = "SSH/SFTP server port. Default: ${DEFAULT-VALUE}.")
         int port;
 
-        @Option(names = {"-u", "--user"}, required = true, description = "SFTP username.")
+        @Option(names = {"-u", "--user"}, required = true, description = "SSH/SFTP username.")
         String user;
 
         @Option(names = "--password-env", description = "Environment variable containing the password. Default lookup: SFTP_PASSWORD.")
@@ -242,6 +257,65 @@ public class SftpPassWrapper implements Runnable {
 
         String passwordEnvName() {
             return passwordEnv == null || passwordEnv.trim().isEmpty() ? "SFTP_PASSWORD" : passwordEnv;
+        }
+    }
+
+    @Command(name = "exec", description = "Execute a remote command with literal arguments (POSIX shell).", mixinStandardHelpOptions = true)
+    static class Exec implements Callable<Integer> {
+        @Mixin
+        ConnectionOptions options;
+
+        @Parameters(index = "0..*", arity = "1..*", paramLabel = "COMMAND [ARGS...]",
+            description = "Remote executable followed by its arguments. Connection options must precede COMMAND.")
+        List<String> command;
+
+        String remoteCommand() {
+            if (command.get(0).isEmpty()) {
+                throw new IllegalArgumentException("Remote command must not be empty.");
+            }
+            List<String> quoted = new ArrayList<>();
+            for (String argument : command) {
+                if (argument.indexOf('\0') >= 0) {
+                    throw new IllegalArgumentException("Remote command and arguments must not contain NUL.");
+                }
+                quoted.add("'" + argument.replace("'", "'\"'\"'") + "'");
+            }
+            return String.join(" ", quoted);
+        }
+
+        @Override
+        public Integer call() throws Exception {
+            String remoteCommand = remoteCommand();
+            char[] password = PasswordResolver.resolve(options);
+            Session session = null;
+            ChannelExec channel = null;
+            try {
+                session = SftpSession.connectSsh(options, password);
+                channel = (ChannelExec) session.openChannel("exec");
+                channel.setCommand(remoteCommand);
+                channel.setInputStream(new ByteArrayInputStream(new byte[0]));
+                channel.setOutputStream(System.out, true);
+                channel.setErrStream(System.err, true);
+                channel.connect(options.timeoutMillis);
+                while (!channel.isClosed()) {
+                    if (!session.isConnected()) {
+                        throw new IOException("SSH connection closed before the remote command completed.");
+                    }
+                    Thread.sleep(50);
+                }
+                int exitStatus = channel.getExitStatus();
+                if (exitStatus < 0) {
+                    throw new IOException("Remote command ended without an exit status.");
+                }
+                return exitStatus;
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw e;
+            } finally {
+                if (channel != null) channel.disconnect();
+                if (session != null) session.disconnect();
+                PasswordResolver.clear(password);
+            }
         }
     }
 
