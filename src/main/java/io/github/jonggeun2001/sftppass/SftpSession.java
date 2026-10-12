@@ -19,6 +19,18 @@ final class SftpSession implements AutoCloseable {
     }
 
     static SftpSession connect(SftpPassWrapper.ConnectionOptions options, char[] password) throws JSchException {
+        Session session = connectSsh(options, password);
+        try {
+            Channel channel = session.openChannel("sftp");
+            channel.connect(options.timeoutMillis);
+            return new SftpSession(session, (ChannelSftp) channel);
+        } catch (JSchException | RuntimeException e) {
+            session.disconnect();
+            throw e;
+        }
+    }
+
+    static Session connectSsh(SftpPassWrapper.ConnectionOptions options, char[] password) throws JSchException {
         JSch jsch = new JSch();
         if (!options.insecure && options.knownHosts != null && Files.isRegularFile(options.knownHosts)) {
             jsch.setKnownHosts(options.knownHosts.toString());
@@ -30,11 +42,13 @@ final class SftpSession implements AutoCloseable {
         Properties config = new Properties();
         config.setProperty("StrictHostKeyChecking", options.insecure ? "no" : "yes");
         session.setConfig(config);
-        session.connect(options.timeoutMillis);
-
-        Channel channel = session.openChannel("sftp");
-        channel.connect(options.timeoutMillis);
-        return new SftpSession(session, (ChannelSftp) channel);
+        try {
+            session.connect(options.timeoutMillis);
+            return session;
+        } catch (JSchException | RuntimeException e) {
+            session.disconnect();
+            throw e;
+        }
     }
 
     ChannelSftp client() {

@@ -1,18 +1,19 @@
 # java-sftp-pass-wrapper
 
-Java-based SFTP wrapper for environments where `sshpass` is unavailable or disallowed.
+Java-based SFTP and SSH command wrapper for environments where `sshpass` is unavailable or disallowed.
 
-This project does **not** try to feed a password into OpenSSH `sftp`. Instead, it performs SFTP directly from Java using JSch, which avoids pseudo-terminal tricks and works in restricted environments.
+This project does **not** try to feed a password into OpenSSH `sftp`. Instead, it performs SFTP and SSH command execution directly from Java using JSch, which avoids pseudo-terminal tricks and works in restricted environments.
 
 ## Features
 
 - Password authentication via environment variable, stdin, password file, or interactive prompt
-- Custom SFTP port via `-P` / `--port` (defaults to `22`)
+- Custom SSH/SFTP port via `-P` / `--port` (defaults to `22`)
 - Basic SFTP commands: `put`, `get`, `ls`, `rm`, `mkdir`, `rmdir`, `rename`
 - Multiple-file transfers with `mget` / `mput` and basename patterns (`*`, `?`)
 - Recursive directory downloads/uploads with `get -r`, `put -r`, `mget -r`, `mput -r`
 - Optional post-upload chmod via `put --chmod <mode>` / `mput --chmod <mode>`
 - Batch mode for a practical subset of OpenSSH `sftp -b` scripts
+- Remote command execution with literal arguments via `exec`, streamed stdout/stderr and the remote exit code
 - Strict host key checking by default via `~/.ssh/known_hosts`
 - Optional `--insecure` mode for legacy/internal environments
 
@@ -24,7 +25,9 @@ before running the Gradle test suite. PRs and pushes to `main` also run
 `scripts/verify-worktree.sh` on Java 8 in CI. Transfer integration tests start
 an isolated SFTP server on loopback with an ephemeral port and temporary files;
 no external server or credentials are needed. Windows CI additionally verifies
-pattern transfers on Java 8. Optional Gradle test filters can be passed to
+pattern transfers on Java 8. Exec integration tests use an isolated SSH server
+and `/bin/sh` on Linux/macOS to verify argument preservation, output, exit codes,
+and execution without an SFTP subsystem. Optional Gradle test filters can be passed to
 `scripts/verify-worktree.sh --tests '*TransferIntegrationTest'`.
 
 ```bash
@@ -150,6 +153,37 @@ java -jar build/libs/java-sftp-pass-wrapper-0.1.0-SNAPSHOT-all.jar \
   --host sftp.example.com --user deploy --port 2222 \
   ls /upload
 ```
+
+### Execute a remote command with arguments
+
+```bash
+export SFTP_PASSWORD='secret'
+sftp-pass --host ssh.example.com --user deploy exec sh /upload/script.sh arg1 "two words"
+sftp-pass --host ssh.example.com --user deploy exec ls -la /upload
+```
+
+Syntax: `exec [connection-options] [--] <command> [args...]`.
+Connection and password options work before or after `exec`, but must precede
+the remote command. Everything after the command is a literal remote argument,
+including `--host`, `--help`, `--`, and `@filename`. Use `exec --help` for the
+wrapper's help. A command beginning with `-` needs the explicit `--` delimiter.
+
+Each command/argument is quoted for a POSIX-compatible remote login shell:
+spaces, empty arguments, quotes, wildcards, and shell metacharacters are preserved.
+For pipelines, redirection, or other shell syntax, explicitly run `sh -c`:
+
+```bash
+sftp-pass --host ssh.example.com --user deploy exec sh -c 'cd /upload && ./script.sh "$1"' sh "two words"
+```
+
+Remote stdout/stderr stream to local stdout/stderr, and the wrapper returns the
+remote exit code. Connection/SSH errors or a missing exit status return a nonzero
+wrapper error. This is noninteractive execution: no PTY is allocated and remote
+stdin receives EOF. `--timeout` controls connection/channel setup, not the command's
+runtime. The server must permit SSH exec requests; an SFTP-only account cannot run
+commands. `exec` is a standalone subcommand and is not available inside SFTP batch
+files. Windows remote shells such as `cmd.exe`/PowerShell are not supported by
+this POSIX quoting mode.
 
 ### Run batch commands
 
